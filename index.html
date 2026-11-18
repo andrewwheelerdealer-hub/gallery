@@ -19,7 +19,9 @@ body{min-height:100vh;overscroll-behavior:none;-webkit-user-select:none;user-sel
 textarea,input{-webkit-user-select:text;user-select:text}
 button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
 .hidden{display:none!important}
-header.bar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:8px;padding:calc(var(--st) + 10px) calc(var(--sr) + 12px) 10px calc(var(--sl) + 12px);background:rgba(0,0,0,.82);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px)}
+header.bar{position:relative;z-index:10;display:flex;align-items:center;gap:8px;padding:calc(var(--st) + 10px) calc(var(--sr) + 12px) 10px calc(var(--sl) + 12px);background:#000}
+header.bar.stick{position:sticky;top:0}
+#statusShade{position:fixed;top:0;left:0;right:0;height:var(--st);background:#000;z-index:15;pointer-events:none}
 .bar h1{flex:1;margin:0;font-size:22px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .iconbtn{min-width:38px;height:38px;border-radius:19px;display:flex;align-items:center;justify-content:center;background:var(--panel);color:var(--accent);font-size:15px;font-weight:600;padding:0 10px;flex:none}
 .iconbtn svg{width:20px;height:20px}
@@ -43,8 +45,8 @@ body:has(#selBar:not(.hidden)) #toast{bottom:calc(var(--sb) + 84px)}
 .subtitle{color:var(--muted);font-size:13px;padding:2px 9px 10px}
 /* viewer */
 #viewer{position:fixed;inset:0;z-index:50;background:#000}
-#stage{position:absolute;inset:0;overflow:hidden;touch-action:none}
-#vImg{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:contain;transform-origin:0 0;will-change:transform;-webkit-user-drag:none;pointer-events:none}
+#stage{position:absolute;left:0;right:0;bottom:0;top:var(--st);overflow:hidden;touch-action:none}
+#vImg{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:contain;transform-origin:0 0;-webkit-user-drag:none;pointer-events:none}
 #vTop{position:absolute;left:0;right:0;top:0;display:flex;align-items:center;gap:8px;padding:calc(var(--st) + 8px) calc(var(--sr) + 12px) 18px calc(var(--sl) + 12px);background:linear-gradient(rgba(0,0,0,.7),transparent);transition:opacity .2s}
 #vCount{flex:1;text-align:center;font-weight:600;font-size:15px}
 #vBottom{position:absolute;left:0;right:0;bottom:0;padding:26px calc(var(--sr) + 14px) calc(var(--sb) + 12px) calc(var(--sl) + 14px);background:linear-gradient(transparent,rgba(0,0,0,.85) 40%);transition:opacity .2s}
@@ -110,6 +112,7 @@ select{font:inherit;font-size:15px;color:var(--muted);background:none;border:0;t
 </style>
 </head>
 <body>
+<div id="statusShade"></div>
 <div id="app"></div>
 
 <input type="file" id="fileInput" accept="image/*" multiple class="hidden">
@@ -321,6 +324,7 @@ async function renderAlbum(id) {
 function drawAlbumBar() {
   const bar = $('#albumBar'), a = state.album, n = state.photos.length;
   $('#albumMain').classList.toggle('selecting', state.selecting);
+  bar.classList.toggle('stick', state.selecting); // keep Select All / Done reachable while selecting
   $('#selBar').classList.toggle('hidden', !state.selecting);
   if (state.selecting) {
     bar.innerHTML = `<button class="textbtn" id="btnSelAll"></button>
@@ -631,6 +635,7 @@ const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
 stage.addEventListener('pointerdown', e => {
   if (document.activeElement === vDesc) vDesc.blur();
   try { stage.setPointerCapture(e.pointerId); } catch (_) {}
+  vImg.style.willChange = 'transform';
   ptrs.set(e.pointerId, pt(e));
   if (ptrs.size === 1) g = { type: 'one', start: pt(e), t0: { x: V.tx, y: V.ty }, moved: false, dx: 0, dy: 0 };
   else if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; g = { type: 'pinch', d0: dist(a, b) || 1, m0: mid(a, b), s0: V.s, t0: { x: V.tx, y: V.ty } }; }
@@ -658,6 +663,8 @@ stage.addEventListener('pointermove', e => {
 function endPtr(e) {
   if (!ptrs.has(e.pointerId)) return;
   ptrs.delete(e.pointerId);
+  // Drop the GPU layer when fingers lift so Safari redraws the photo crisply at its current zoom.
+  if (!ptrs.size) setTimeout(() => { if (!ptrs.size) vImg.style.willChange = 'auto'; }, 260);
   if (!g) return;
   if (g.type === 'pinch') {
     if (ptrs.size === 1) { const p = [...ptrs.values()][0]; g = { type: 'one', start: p, t0: { x: V.tx, y: V.ty }, moved: true, dx: 0, dy: 0 }; }
