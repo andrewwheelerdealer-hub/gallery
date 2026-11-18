@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Gallery">
+<meta name="theme-color" content="#000000">
+<title>Gallery</title>
+<link rel="apple-touch-icon" id="touchIcon" href="">
+<style>
+:root{--bg:#000;--panel:#1c1c1e;--panel2:#2c2c2e;--line:#38383a;--text:#f2f2f7;--muted:#8e8e93;--accent:#0a84ff;--danger:#ff453a;--gap:3px;
+--st:env(safe-area-inset-top,0px);--sb:env(safe-area-inset-bottom,0px);--sl:env(safe-area-inset-left,0px);--sr:env(safe-area-inset-right,0px)}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--text);font:16px -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;touch-action:manipulation}
+body{min-height:100vh;overscroll-behavior:none;-webkit-user-select:none;user-select:none}
+textarea,input{-webkit-user-select:text;user-select:text}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+.hidden{display:none!important}
+header.bar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:8px;padding:calc(var(--st) + 10px) calc(var(--sr) + 12px) 10px calc(var(--sl) + 12px);background:rgba(0,0,0,.82);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px)}
+.bar h1{flex:1;margin:0;font-size:22px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.iconbtn{min-width:38px;height:38px;border-radius:19px;display:flex;align-items:center;justify-content:center;background:var(--panel);color:var(--accent);font-size:15px;font-weight:600;padding:0 10px;flex:none}
+.iconbtn svg{width:20px;height:20px}
+.pill{background:var(--accent);color:#fff;border-radius:22px;padding:11px 22px;font-weight:600}
+main{padding:6px calc(var(--sr) + 12px) calc(var(--sb) + 28px) calc(var(--sl) + 12px)}
+main.tight{padding-left:calc(var(--sl) + 3px);padding-right:calc(var(--sr) + 3px)}
+.albums{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:18px 12px}
+.album{text-align:left;display:block;width:100%}
+.album .cover{aspect-ratio:1;border-radius:12px;background:var(--panel);overflow:hidden;display:flex;align-items:center;justify-content:center;color:var(--muted)}
+.album .cover img{width:100%;height:100%;object-fit:contain;display:block}
+.album .cover svg{width:40px;height:40px;opacity:.5}
+.album .name{margin-top:7px;font-weight:600;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.album .count{color:var(--muted);font-size:13px;margin-top:1px}
+.empty{color:var(--muted);text-align:center;padding:70px 20px;line-height:1.5}
+.grid .row{display:flex;gap:var(--gap);margin-bottom:var(--gap)}
+.grid .row button{flex:none;height:100%;background:var(--panel);overflow:hidden;display:block}
+.grid .row button:last-child.fill{flex:1 1 0}
+.grid img{width:100%;height:100%;display:block;object-fit:cover}
+.subtitle{color:var(--muted);font-size:13px;padding:2px 9px 10px}
+/* viewer */
+#viewer{position:fixed;inset:0;z-index:50;background:#000}
+#stage{position:absolute;inset:0;overflow:hidden;touch-action:none}
+#vImg{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:contain;transform-origin:0 0;will-change:transform;-webkit-user-drag:none;pointer-events:none}
+#vTop{position:absolute;left:0;right:0;top:0;display:flex;align-items:center;gap:8px;padding:calc(var(--st) + 8px) calc(var(--sr) + 12px) 18px calc(var(--sl) + 12px);background:linear-gradient(rgba(0,0,0,.7),transparent);transition:opacity .2s}
+#vCount{flex:1;text-align:center;font-weight:600;font-size:15px}
+#vBottom{position:absolute;left:0;right:0;bottom:0;padding:26px calc(var(--sr) + 14px) calc(var(--sb) + 12px) calc(var(--sl) + 14px);background:linear-gradient(transparent,rgba(0,0,0,.85) 40%);transition:opacity .2s}
+#vMeta{color:var(--muted);font-size:12px;margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#vDesc{width:100%;resize:none;border:1px solid var(--line);border-radius:12px;background:rgba(28,28,30,.85);color:var(--text);font:15px/1.4 inherit;font-family:inherit;padding:9px 12px;min-height:42px;max-height:30vh;outline:none}
+#vDesc:focus{border-color:var(--accent)}
+#viewer.nochrome #vTop,#viewer.nochrome #vBottom{opacity:0;pointer-events:none}
+/* overlays */
+.overlay{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center}
+.overlay.center{align-items:center}
+.sheet{width:100%;max-width:520px;padding:0 10px calc(var(--sb) + 10px);animation:up .2s ease-out}
+@keyframes up{from{transform:translateY(40px);opacity:0}to{transform:none;opacity:1}}
+.sheet .group{background:rgba(44,44,46,.97);border-radius:14px;overflow:hidden;margin-bottom:8px}
+.sheet .stitle{color:var(--muted);font-size:13px;text-align:center;padding:13px 16px;border-bottom:1px solid var(--line)}
+.sheet .group button{display:block;width:100%;padding:16px;font-size:18px;color:var(--accent);text-align:center;border-bottom:1px solid var(--line)}
+.sheet .group button:last-child{border-bottom:0}
+.sheet .group button.danger{color:var(--danger)}
+.sheet .cancel{font-weight:600}
+.modal{width:min(320px,88vw);background:rgba(44,44,46,.98);border-radius:16px;overflow:hidden;text-align:center;animation:up .18s ease-out}
+.modal h3{margin:18px 16px 4px;font-size:17px}
+.modal p{margin:4px 16px 8px;font-size:13px;color:#d1d1d6;line-height:1.4}
+.modal input{display:block;width:calc(100% - 32px);margin:8px 16px;padding:9px 10px;border-radius:8px;border:1px solid var(--line);background:#1c1c1e;color:var(--text);font-size:16px;outline:none}
+.modal .btns{display:flex;border-top:1px solid var(--line);margin-top:12px}
+.modal .btns button{flex:1;padding:13px;color:var(--accent);font-size:17px}
+.modal .btns button+button{border-left:1px solid var(--line);font-weight:600}
+.modal .btns button.danger{color:var(--danger)}
+#toast{position:fixed;left:50%;bottom:calc(var(--sb) + 24px);transform:translateX(-50%);z-index:90;background:rgba(58,58,60,.96);padding:10px 18px;border-radius:20px;font-size:14px;max-width:86vw;text-align:center;pointer-events:none;transition:opacity .25s;opacity:0}
+#toast.show{opacity:1}
+/* lock */
+#lock{position:fixed;inset:0;z-index:100;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:30px}
+#lock .logo{width:72px;height:72px;border-radius:18px;background:linear-gradient(135deg,#0a84ff,#5e5ce6);display:flex;align-items:center;justify-content:center}
+#lock .logo svg{width:36px;height:36px;color:#fff}
+#lock h2{margin:6px 0 4px;font-size:20px}
+#lock input{width:min(280px,80vw);padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:var(--panel);color:var(--text);font-size:17px;text-align:center;outline:none}
+#lock .err{color:var(--danger);font-size:14px;min-height:18px}
+#lock .link{color:var(--accent);font-size:16px;padding:8px}
+.shake{animation:shake .35s}
+@keyframes shake{20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}
+/* settings */
+#settings{position:fixed;inset:0;z-index:60;background:#000;overflow-y:auto}
+.section{margin:18px 0 6px;color:var(--muted);font-size:13px;text-transform:uppercase;letter-spacing:.03em;padding:0 16px}
+.list{background:var(--panel);border-radius:12px;overflow:hidden}
+.item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 16px;border-bottom:1px solid var(--line);width:100%;text-align:left;min-height:48px}
+.item:last-child{border-bottom:0}
+.item .v{color:var(--muted);font-size:15px}
+button.item{color:var(--accent)}
+button.item.danger{color:var(--danger)}
+.note{color:var(--muted);font-size:13px;line-height:1.45;padding:8px 16px 0}
+select{font:inherit;font-size:15px;color:var(--muted);background:none;border:0;text-align:right;outline:none}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<input type="file" id="fileInput" accept="image/*" multiple class="hidden">
+
+<div id="viewer" class="hidden">
+  <div id="stage"><img id="vImg" alt=""></div>
+  <div id="vTop">
+    <button class="iconbtn" id="vClose" aria-label="Close"></button>
+    <div id="vCount"></div>
+    <button class="iconbtn" id="vMore" aria-label="More"></button>
+  </div>
+  <div id="vBottom">
+    <div id="vMeta"></div>
+    <textarea id="vDesc" rows="1" placeholder="Add a description…"></textarea>
+  </div>
+</div>
+
+<div id="settings" class="hidden"></div>
+
+<div id="lock" class="hidden">
+  <div class="logo" id="lockLogo"></div>
+  <h2>Gallery is locked</h2>
+  <form id="lockForm" autocomplete="off">
+    <input type="password" id="lockPw" placeholder="Password" autocomplete="current-password">
+  </form>
+  <div class="err" id="lockErr"></div>
+  <button class="pill" id="lockGo">Unlock</button>
+  <button class="link hidden" id="lockFace">Use Face ID</button>
+</div>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+/* ---------- helpers ---------- */
+const $ = s => document.querySelector(s);
+const app = $('#app');
+const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
+const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+const rand = n => crypto.getRandomValues(new Uint8Array(n));
+
+const ICON = {
+  back:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>',
+  plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  gear:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+  more:'<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
+  close:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  size:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>',
+  photo:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/></svg>',
+  lock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="4" y="11" width="16" height="10" rx="2.5"/><path d="M8 11V7.5a4 4 0 0 1 8 0V11"/></svg>'
+};
+
+let toastTimer;
+function toast(msg, ms = 2200) {
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer); if (ms) toastTimer = setTimeout(() => t.classList.remove('show'), ms);
+}
+
+/* ---------- dialogs ---------- */
+function sheet(title, options) {
+  return new Promise(resolve => {
+    const wrap = document.createElement('div'); wrap.className = 'overlay';
+    wrap.innerHTML = `<div class="sheet"><div class="group">${title ? `<div class="stitle">${esc(title)}</div>` : ''}${options.map((o, i) => `<button data-i="${i}" class="${o.danger ? 'danger' : ''}">${esc(o.label)}</button>`).join('')}</div><div class="group"><button class="cancel" data-i="-1">Cancel</button></div></div>`;
+    const finish = v => { wrap.remove(); resolve(v); };
+    wrap.addEventListener('click', e => {
+      const b = e.target.closest('button');
+      if (b) { const i = +b.dataset.i; finish(i < 0 ? null : options[i].value); }
+      else if (e.target === wrap) finish(null);
+    });
+    document.body.appendChild(wrap);
+  });
+}
+// fields: [{type,placeholder,value}] ; resolves array of values or null
+function ask({ title, message = '', fields = [], ok = 'OK', danger = false, cancel = 'Cancel' }) {
+  return new Promise(resolve => {
+    const wrap = document.createElement('div'); wrap.className = 'overlay center';
+    wrap.innerHTML = `<form class="modal"><h3>${esc(title)}</h3>${message ? `<p>${esc(message)}</p>` : ''}${fields.map(f => `<input type="${f.type || 'text'}" placeholder="${esc(f.placeholder || '')}" value="${esc(f.value || '')}" autocomplete="off">`).join('')}<div class="btns">${cancel ? `<button type="button" data-c>${esc(cancel)}</button>` : ''}<button type="submit" class="${danger ? 'danger' : ''}">${esc(ok)}</button></div></form>`;
+    const form = wrap.querySelector('form');
+    const finish = v => { wrap.remove(); resolve(v); };
+    form.addEventListener('submit', e => { e.preventDefault(); finish([...form.querySelectorAll('input')].map(i => i.value)); });
+    const c = form.querySelector('[data-c]'); if (c) c.addEventListener('click', () => finish(null));
+    document.body.appendChild(wrap);
+    const first = form.querySelector('input'); if (first) setTimeout(() => { first.focus(); first.select(); }, 60);
+  });
+}
+
+/* ---------- database ---------- */
+let db;
+function openDB() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('gallery-db', 1);
+    r.onupgradeneeded = () => {
+      const d = r.result;
+      d.createObjectStore('albums', { keyPath: 'id' });
+      d.createObjectStore('photos', { keyPath: 'id' }).createIndex('album', 'albumId');
+      d.createObjectStore('originals');
+      d.createObjectStore('meta');
+    };
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+const req = r => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+const done = t => new Promise((res, rej) => { t.oncomplete = () => res(); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error); });
+const store = (name, mode = 'readonly') => db.transaction(name, mode).objectStore(name);
+const getAll = name => req(store(name).getAll());
+const get = (name, key) => req(store(name).get(key));
+function put(name, val, key) {
+  const t = db.transaction(name, 'readwrite'); const s = t.objectStore(name);
+  if (key === undefined) s.put(val); else s.put(val, key);
+  return done(t);
+}
+const photosIn = albumId => req(store('photos').index('album').getAll(albumId));
+const countIn = albumId => req(store('photos').index('album').count(albumId));
+function firstIn(albumId) {
+  return new Promise((res, rej) => {
+    const r = store('photos').index('album').openCursor(IDBKeyRange.only(albumId));
+    r.onsuccess = () => res(r.result ? r.result.value : null); r.onerror = () => rej(r.error);
+  });
+}
+async function deletePhotos(ids) {
+  const t = db.transaction(['photos', 'originals'], 'readwrite');
+  for (const id of ids) { t.objectStore('photos').delete(id); t.objectStore('originals').delete(id); }
+  return done(t);
+}
+
+/* ---------- object URL bookkeeping ---------- */
+let liveUrls = [];
+const mkUrl = blob => { const u = URL.createObjectURL(blob); liveUrls.push(u); return u; };
+function revokeAll() { liveUrls.forEach(u => URL.revokeObjectURL(u)); liveUrls = []; }
+
+/* ---------- state & routing ---------- */
+const state = { album: null, photos: [], urls: [] };
+const SIZES = [100, 150, 220];
+let sizeIdx = +(localStorage.getItem('gal-size') ?? 1);
+if (!(sizeIdx in SIZES)) sizeIdx = 1;
+
+function route() {
+  const m = location.hash.match(/^#a-(.+)$/);
+  if (m) renderAlbum(decodeURIComponent(m[1])); else renderHome();
+}
+window.addEventListener('hashchange', route);
+
+/* ---------- home ---------- */
+async function renderHome() {
+  state.album = null; state.photos = []; state.urls = [];
+  const albums = (await getAll('albums')).sort((a, b) => a.created - b.created);
+  const cards = [];
+  for (const a of albums) {
+    const count = await countIn(a.id);
+    let cover = a.coverId ? await get('photos', a.coverId) : null;
+    if (!cover && count) cover = await firstIn(a.id);
+    cards.push({ a, count, cover });
+  }
+  revokeAll();
+  app.innerHTML = `<header class="bar"><h1>Albums</h1>
+      <button class="iconbtn" id="btnSettings" aria-label="Settings">${ICON.gear}</button>
+      <button class="iconbtn" id="btnNew" aria-label="New album">${ICON.plus}</button></header>
+    <main>${albums.length ? '<div class="albums" id="albums"></div>' :
+      '<div class="empty">No albums yet.<br><br><button class="pill" id="btnFirst">Create an album</button></div>'}</main>`;
+  const wrap = $('#albums');
+  for (const { a, count, cover } of cards) {
+    const b = document.createElement('button'); b.className = 'album';
+    b.innerHTML = `<div class="cover">${cover ? `<img src="${mkUrl(cover.thumb)}" alt="">` : ICON.photo}</div>
+      <div class="name">${esc(a.name)}</div><div class="count">${count} photo${count === 1 ? '' : 's'}</div>`;
+    b.onclick = () => { location.hash = 'a-' + encodeURIComponent(a.id); };
+    wrap.appendChild(b);
+  }
+  $('#btnNew').onclick = newAlbum;
+  $('#btnSettings').onclick = openSettings;
+  const f = $('#btnFirst'); if (f) f.onclick = newAlbum;
+}
+async function newAlbum() {
+  const r = await ask({ title: 'New Album', message: 'Enter a name for this album.', fields: [{ placeholder: 'Title' }], ok: 'Save' });
+  if (!r) return;
+  const name = r[0].trim() || 'Untitled';
+  const a = { id: uid(), name, created: Date.now(), coverId: null, sort: 'old' };
+  await put('albums', a);
+  location.hash = 'a-' + encodeURIComponent(a.id);
+}
+
+/* ---------- album ---------- */
+async function renderAlbum(id) {
+  const a = await get('albums', id);
+  if (!a) { location.hash = ''; renderHome(); return; }
+  const photos = await photosIn(id);
+  photos.sort((x, y) => a.sort === 'new' ? y.added - x.added : x.added - y.added);
+  revokeAll();
+  state.album = a; state.photos = photos; state.urls = photos.map(p => mkUrl(p.thumb));
+  app.innerHTML = `<header class="bar">
+      <button class="iconbtn" id="btnBack" aria-label="Albums">${ICON.back}</button>
+      <h1>${esc(a.name)}</h1>
+      <button class="iconbtn" id="btnSize" aria-label="Thumbnail size">${ICON.size}</button>
+      <button class="iconbtn" id="btnImport" aria-label="Import">${ICON.plus}</button>
+      <button class="iconbtn" id="btnMenu" aria-label="Album options">${ICON.more}</button></header>
+    <main class="tight">${photos.length ? `<div class="subtitle">${photos.length} photo${photos.length === 1 ? '' : 's'}</div><div class="grid" id="grid"></div>` :
+      '<div class="empty">This album is empty.<br><br><button class="pill" id="btnFirstImport">Import photos</button></div>'}</main>`;
+  $('#btnBack').onclick = () => { location.hash = ''; };
+  $('#btnImport').onclick = pickFiles;
+  $('#btnMenu').onclick = albumMenu;
+  $('#btnSize').onclick = () => {
+    sizeIdx = (sizeIdx + 1) % SIZES.length; localStorage.setItem('gal-size', sizeIdx);
+    layoutGrid(); toast(['Small', 'Medium', 'Large'][sizeIdx] + ' thumbnails', 1200);
+  };
+  const fi = $('#btnFirstImport'); if (fi) fi.onclick = pickFiles;
+  layoutGrid();
+}
+
+// Justified rows: every thumbnail keeps the photo's real shape — nothing is cropped.
+function layoutGrid() {
+  const grid = $('#grid'); if (!grid) return;
+  const W = grid.clientWidth, gap = 3, target = SIZES[sizeIdx];
+  grid.innerHTML = '';
+  let row = [], sum = 0;
+  const flush = last => {
+    if (!row.length) return;
+    let h = (W - gap * (row.length - 1)) / sum;
+    const fill = !(last && h > target * 1.25);
+    if (!fill) h = target;
+    const r = document.createElement('div'); r.className = 'row'; r.style.height = h + 'px';
+    row.forEach(({ i, ar }, k) => {
+      const b = document.createElement('button');
+      b.style.width = (ar * h) + 'px';
+      if (fill && k === row.length - 1) b.classList.add('fill');
+      b.innerHTML = `<img src="${state.urls[i]}" alt="" loading="lazy" decoding="async">`;
+      b.onclick = () => openViewer(i);
+      r.appendChild(b);
+    });
+    grid.appendChild(r);
+    row = []; sum = 0;
+  };
+  state.photos.forEach((p, i) => {
+    const ar = (p.w && p.h) ? p.w / p.h : 1;
+    row.push({ i, ar }); sum += ar;
+    if (sum * target + gap * (row.length - 1) >= W) flush(false);
+  });
+  flush(true);
+}
+let resizeTimer;
+window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(layoutGrid, 120); });
+
+async function albumMenu() {
+  const a = state.album;
+  const v = await sheet(a.name, [
+    { label: 'Rename album', value: 'rename' },
+    { label: a.sort === 'new' ? 'Sort: oldest first' : 'Sort: newest first', value: 'sort' },
+    { label: 'Delete album', value: 'delete', danger: true }
+  ]);
+  if (v === 'rename') {
+    const r = await ask({ title: 'Rename Album', fields: [{ value: a.name }], ok: 'Save' });
+    if (r && r[0].trim()) { a.name = r[0].trim(); await put('albums', a); renderAlbum(a.id); }
+  } else if (v === 'sort') {
+    a.sort = a.sort === 'new' ? 'old' : 'new'; await put('albums', a); renderAlbum(a.id);
+  } else if (v === 'delete') {
+    const r = await ask({ title: `Delete “${a.name}”?`, message: `This permanently removes the album and its ${state.photos.length} photo(s) from this app.`, ok: 'Delete', danger: true });
+    if (!r) return;
+    await deletePhotos(state.photos.map(p => p.id));
+    const t = db.transaction('albums', 'readwrite'); t.objectStore('albums').delete(a.id); await done(t);
+    location.hash = '';
+  }
+}
+
+/* ---------- import ---------- */
+let suppressLock = false;
+const fileInput = $('#fileInput');
+function pickFiles() { suppressLock = true; fileInput.value = ''; fileInput.click(); }
+fileInput.addEventListener('cancel', () => { suppressLock = false; });
+fileInput.addEventListener('change', async () => {
+  suppressLock = false;
+  const files = [...fileInput.files]; if (!files.length || !state.album) return;
+  await importFiles(files, state.album);
+});
+
+function loadImg(blob) {
+  return new Promise((res, rej) => {
+    const u = URL.createObjectURL(blob); const im = new Image();
+    im.onload = () => res({ im, u });
+    im.onerror = () => { URL.revokeObjectURL(u); rej(new Error('Could not read image')); };
+    im.src = u;
+  });
+}
+async function makeThumb(blob) {
+  const { im, u } = await loadImg(blob);
+  const w = im.naturalWidth, h = im.naturalHeight;
+  const sc = Math.min(1, 480 / h, 1200 / w);
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(w * sc)); c.height = Math.max(1, Math.round(h * sc));
+  c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+  URL.revokeObjectURL(u);
+  const thumb = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.82));
+  if (!thumb) throw new Error('Thumbnail failed');
+  return { thumb, w, h };
+}
+async function importFiles(files, album) {
+  let ok = 0, fail = 0, firstId = null;
+  const base = Date.now();
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    toast(`Importing ${i + 1} of ${files.length}…`, 0);
+    try {
+      const data = new Blob([await f.arrayBuffer()], { type: f.type || 'image/jpeg' });
+      const { thumb, w, h } = await makeThumb(data);
+      const id = uid();
+      const rec = { id, albumId: album.id, name: f.name || 'photo', w, h, desc: '', added: base + i, type: data.type, size: data.size, thumb };
+      const t = db.transaction(['photos', 'originals'], 'readwrite');
+      t.objectStore('photos').put(rec); t.objectStore('originals').put(data, id);
+      await done(t);
+      ok++; if (!firstId) firstId = id;
+    } catch (e) { console.warn(e); fail++; }
+  }
+  if (firstId && !album.coverId) { album.coverId = firstId; await put('albums', album); }
+  try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch (e) {}
+  toast(`Imported ${ok} photo${ok === 1 ? '' : 's'}${fail ? ` · ${fail} couldn’t be read` : ''}`, 2600);
+  if (state.album && state.album.id === album.id) renderAlbum(album.id);
+}
+
+/* ---------- viewer ---------- */
+const viewer = $('#viewer'), stage = $('#stage'), vImg = $('#vImg'), vDesc = $('#vDesc');
+$('#vClose').innerHTML = ICON.close; $('#vMore').innerHTML = ICON.more;
+const V = { i: 0, s: 1, tx: 0, ty: 0, origUrl: null, origBlob: null, token: 0, descFor: null };
+
+function openViewer(i) { V.i = i; viewer.classList.remove('hidden'); viewer.classList.remove('nochrome'); document.body.style.overflow = 'hidden'; showPhoto(); }
+function closeViewer() {
+  flushDesc(); vDesc.blur();
+  viewer.classList.add('hidden'); document.body.style.overflow = '';
+  if (V.origUrl) { URL.revokeObjectURL(V.origUrl); V.origUrl = null; }
+  V.origBlob = null; vImg.removeAttribute('src');
+}
+$('#vClose').onclick = closeViewer;
+document.addEventListener('keydown', e => {
+  if (viewer.classList.contains('hidden') || document.activeElement === vDesc) return;
+  if (e.key === 'Escape') closeViewer(); else if (e.key === 'ArrowRight') go(1); else if (e.key === 'ArrowLeft') go(-1);
+});
+
+async function showPhoto() {
+  flushDesc();
+  const p = state.photos[V.i]; if (!p) { closeViewer(); return; }
+  resetZoom(false);
+  vImg.src = state.urls[V.i];
+  $('#vCount').textContent = `${V.i + 1} of ${state.photos.length}`;
+  $('#vMeta').textContent = `${p.name} · ${p.w}×${p.h} · ${new Date(p.added).toLocaleDateString()}`;
+  V.descFor = p; vDesc.value = p.desc || ''; autoGrow();
+  const token = ++V.token;
+  V.origBlob = null;
+  const blob = await get('originals', p.id);
+  if (token !== V.token || !blob) return;
+  V.origBlob = blob;
+  const u = URL.createObjectURL(blob); const im = new Image();
+  im.onload = () => {
+    if (token !== V.token) { URL.revokeObjectURL(u); return; }
+    if (V.origUrl) URL.revokeObjectURL(V.origUrl);
+    V.origUrl = u; vImg.src = u;
+  };
+  im.onerror = () => URL.revokeObjectURL(u);
+  im.src = u;
+}
+function go(d) {
+  const ni = V.i + d;
+  if (ni < 0 || ni >= state.photos.length) { resetZoom(true); return; }
+  V.i = ni; showPhoto();
+}
+
+/* description */
+let descTimer;
+function autoGrow() { vDesc.style.height = 'auto'; vDesc.style.height = Math.min(vDesc.scrollHeight + 2, innerHeight * 0.3) + 'px'; }
+function flushDesc() {
+  clearTimeout(descTimer);
+  const p = V.descFor;
+  if (p && (p.desc || '') !== vDesc.value) { p.desc = vDesc.value; put('photos', p).catch(e => toast('Couldn’t save description')); }
+}
+vDesc.addEventListener('input', () => { autoGrow(); clearTimeout(descTimer); descTimer = setTimeout(flushDesc, 400); });
+vDesc.addEventListener('blur', flushDesc);
+
+/* zoom & gestures */
+function apply(anim) { vImg.style.transition = anim ? 'transform .22s ease' : 'none'; vImg.style.transform = `translate(${V.tx}px,${V.ty}px) scale(${V.s})`; }
+function resetZoom(anim) { V.s = 1; V.tx = 0; V.ty = 0; apply(anim); }
+const ptrs = new Map(); let g = null, lastTap = 0, tapTimer = null;
+const pt = e => { const r = stage.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+
+stage.addEventListener('pointerdown', e => {
+  if (document.activeElement === vDesc) vDesc.blur();
+  try { stage.setPointerCapture(e.pointerId); } catch (_) {}
+  ptrs.set(e.pointerId, pt(e));
+  if (ptrs.size === 1) g = { type: 'one', start: pt(e), t0: { x: V.tx, y: V.ty }, moved: false, dx: 0, dy: 0 };
+  else if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; g = { type: 'pinch', d0: dist(a, b) || 1, m0: mid(a, b), s0: V.s, t0: { x: V.tx, y: V.ty } }; }
+});
+stage.addEventListener('pointermove', e => {
+  if (!ptrs.has(e.pointerId) || !g) return;
+  ptrs.set(e.pointerId, pt(e));
+  if (g.type === 'pinch' && ptrs.size >= 2) {
+    const [a, b] = [...ptrs.values()];
+    const s = clamp(g.s0 * dist(a, b) / g.d0, 1, 8), m = mid(a, b);
+    const cx = (g.m0.x - g.t0.x) / g.s0, cy = (g.m0.y - g.t0.y) / g.s0;
+    V.s = s; V.tx = m.x - s * cx; V.ty = m.y - s * cy; apply(false);
+  } else if (g.type === 'one') {
+    const p = pt(e), dx = p.x - g.start.x, dy = p.y - g.start.y;
+    if (Math.abs(dx) > 8 || Math.abs(dy) > 8) g.moved = true;
+    g.dx = dx; g.dy = dy;
+    if (V.s > 1) { V.tx = g.t0.x + dx; V.ty = g.t0.y + dy; apply(false); }
+    else if (g.moved) {
+      const horiz = Math.abs(dx) > Math.abs(dy);
+      vImg.style.transition = 'none';
+      vImg.style.transform = horiz ? `translate(${dx}px,0)` : `translate(0,${Math.max(0, dy)}px)`;
+    }
+  }
+});
+function endPtr(e) {
+  if (!ptrs.has(e.pointerId)) return;
+  ptrs.delete(e.pointerId);
+  if (!g) return;
+  if (g.type === 'pinch') {
+    if (ptrs.size === 1) { const p = [...ptrs.values()][0]; g = { type: 'one', start: p, t0: { x: V.tx, y: V.ty }, moved: true, dx: 0, dy: 0 }; }
+    else if (ptrs.size === 0) { if (V.s < 1.05) resetZoom(true); g = null; }
+    return;
+  }
+  if (ptrs.size) return;
+  const { dx, dy, moved } = g; g = null;
+  if (!moved) { handleTap(e); return; }
+  if (V.s > 1) return;
+  if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) go(dx < 0 ? 1 : -1);
+  else if (dy > 110 && Math.abs(dy) > Math.abs(dx)) closeViewer();
+  else resetZoom(true);
+}
+stage.addEventListener('pointerup', endPtr);
+stage.addEventListener('pointercancel', endPtr);
+function handleTap(e) {
+  const now = Date.now(), p = pt(e);
+  if (now - lastTap < 300) {
+    clearTimeout(tapTimer); lastTap = 0;
+    if (V.s > 1) resetZoom(true);
+    else { V.s = 2.5; V.tx = p.x * (1 - 2.5); V.ty = p.y * (1 - 2.5); apply(true); }
+  } else {
+    lastTap = now;
+    tapTimer = setTimeout(() => viewer.classList.toggle('nochrome'), 260);
+  }
+}
+
+/* viewer actions */
+$('#vMore').onclick = async () => {
+  const p = state.photos[V.i]; if (!p) return;
+  const v = await sheet(null, [
+    { label: 'Set as album cover', value: 'cover' },
+    { label: 'Move to another album', value: 'move' },
+    { label: 'Save or share original', value: 'share' },
+    { label: 'Delete photo', value: 'del', danger: true }
+  ]);
+  const a = state.album;
+  if (v === 'cover') { a.coverId = p.id; await put('albums', a); toast('Album cover updated'); }
+  else if (v === 'share') sharePhoto(p);
+  else if (v === 'move') {
+    const others = (await getAll('albums')).filter(x => x.id !== a.id).sort((x, y) => x.created - y.created);
+    if (!others.length) { toast('Create another album first'); return; }
+    const dest = await sheet('Move to…', others.map(x => ({ label: x.name, value: x })));
+    if (!dest) return;
+    flushDesc();
+    p.albumId = dest.id; await put('photos', p);
+    if (!dest.coverId) { dest.coverId = p.id; await put('albums', dest); }
+    if (a.coverId === p.id) { a.coverId = null; await put('albums', a); }
+    removeFromView(); toast(`Moved to “${dest.name}”`);
+  } else if (v === 'del') {
+    const r = await ask({ title: 'Delete this photo?', message: 'It will be removed from this app. Copies elsewhere (Photos, Files) are not affected.', ok: 'Delete', danger: true });
+    if (!r) return;
+    V.descFor = null;
+    await deletePhotos([p.id]);
+    if (a.coverId === p.id) { a.coverId = null; await put('albums', a); }
+    removeFromView(); toast('Photo deleted');
+  }
+};
+function removeFromView() {
+  V.descFor = null;
+  state.photos.splice(V.i, 1); state.urls.splice(V.i, 1);
+  if (!state.photos.length) { closeViewer(); renderAlbum(state.album.id); return; }
+  if (V.i >= state.photos.length) V.i = state.photos.length - 1;
+  showPhoto(); layoutGrid();
+  const sub = document.querySelector('.subtitle'); if (sub) sub.textContent = `${state.photos.length} photo${state.photos.length === 1 ? '' : 's'}`;
+}
+async function sharePhoto(p) {
+  const blob = V.origBlob || await get('originals', p.id);
+  if (!blob) { toast('Original not found'); return; }
+  const file = new File([blob], p.name || 'photo.jpg', { type: blob.type || 'image/jpeg' });
+  suppressLock = true;
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file] }); }
+    else { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
+  } catch (e) { if (e && e.name !== 'AbortError') toast('Sharing isn’t available here'); }
+  setTimeout(() => { suppressLock = false; }, 1500);
+}
+
+/* ---------- lock (password + Face ID) ---------- */
+let lockCfg = null, locked = false;
+const lockOn = () => !!(lockCfg && lockCfg.hash);
+async function hashPw(pw, salt, iter) {
+  const k = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveBits']);
+  return b64(await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: iter, hash: 'SHA-256' }, k, 256));
+}
+async function checkPw(pw) { return lockOn() && (await hashPw(pw, unb64(lockCfg.salt), lockCfg.iter)) === lockCfg.hash; }
+async function savePw(pw) {
+  const salt = rand(16), iter = 210000;
+  lockCfg = { ...(lockCfg || { autoLock: 60, cred: null }), salt: b64(salt), iter, hash: await hashPw(pw, salt, iter) };
+  await put('meta', lockCfg, 'lock');
+}
+const faceSupported = () => !!(window.PublicKeyCredential && navigator.credentials);
+
+function showLock() {
+  if (!lockOn()) return;
+  locked = true;
+  if (!viewer.classList.contains('hidden')) closeViewer();
+  document.querySelectorAll('.overlay').forEach(o => o.remove());
+  $('#lock').classList.remove('hidden');
+  $('#lockPw').value = ''; $('#lockErr').textContent = '';
+  $('#lockFace').classList.toggle('hidden', !lockCfg.cred);
+}
+function unlock() { locked = false; $('#lock').classList.add('hidden'); $('#lockPw').blur(); }
+async function tryPw() {
+  const pw = $('#lockPw').value; if (!pw) return;
+  if (await checkPw(pw)) unlock();
+  else { $('#lockErr').textContent = 'Wrong password'; const i = $('#lockPw'); i.classList.remove('shake'); void i.offsetWidth; i.classList.add('shake'); i.select(); }
+}
+$('#lockForm').addEventListener('submit', e => { e.preventDefault(); tryPw(); });
+$('#lockGo').onclick = tryPw;
+$('#lockLogo').innerHTML = ICON.lock;
+$('#lockFace').onclick = async () => {
+  try {
+    await navigator.credentials.get({ publicKey: { challenge: rand(32), allowCredentials: [{ type: 'public-key', id: unb64(lockCfg.cred) }], userVerification: 'required', timeout: 60000 } });
+    unlock();
+  } catch (e) { $('#lockErr').textContent = 'Face ID didn’t work — use your password'; }
+};
+async function enableFace() {
+  if (!faceSupported()) { toast('Face ID isn’t available in this browser'); return false; }
+  try {
+    const cred = await navigator.credentials.create({ publicKey: {
+      challenge: rand(32), rp: { name: 'Gallery' },
+      user: { id: rand(16), name: 'Gallery lock', displayName: 'Gallery lock' },
+      pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+      authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'discouraged' },
+      timeout: 60000, attestation: 'none' } });
+    lockCfg.cred = b64(cred.rawId); await put('meta', lockCfg, 'lock'); return true;
+  } catch (e) { toast('Couldn’t set up Face ID' + (e && e.name === 'NotAllowedError' ? ' (cancelled or not allowed here)' : '')); return false; }
+}
+
+let hiddenAt = 0;
+document.addEventListener('visibilitychange', () => {
+  if (!lockOn()) return;
+  if (document.hidden) {
+    hiddenAt = Date.now();
+    if (!suppressLock && lockCfg.autoLock === 0) showLock();
+  } else {
+    if (suppressLock) { suppressLock = false; return; }
+    if (!locked && Date.now() - hiddenAt >= (lockCfg.autoLock || 0) * 1000) showLock();
+  }
+});
+
+/* ---------- settings ---------- */
+async function openSettings() {
+  const el = $('#settings'); el.classList.remove('hidden');
+  let usage = '—', persisted = '—';
+  try { const est = await navigator.storage.estimate(); usage = (est.usage / 1048576).toFixed(1) + ' MB'; } catch (e) {}
+  try { persisted = (await navigator.storage.persisted()) ? 'Yes' : 'Not yet'; } catch (e) {}
+  const on = lockOn();
+  el.innerHTML = `<header class="bar"><h1>Settings</h1><button class="iconbtn" id="sDone">Done</button></header>
+  <main>
+    <div class="section">Privacy</div>
+    <div class="list">
+      ${on ? `
+        <div class="item">Password lock<span class="v">On</span></div>
+        <div class="item">Face ID ${faceSupported() ? `<button id="sFace" class="v" style="color:var(--accent)">${lockCfg.cred ? 'On · Turn off' : 'Turn on'}</button>` : '<span class="v">Not available</span>'}</div>
+        <div class="item">Auto-lock<select id="sAuto">
+          <option value="0">Immediately</option><option value="60">After 1 minute</option><option value="300">After 5 minutes</option></select></div>
+        <button class="item" id="sLockNow">Lock now</button>
+        <button class="item" id="sChange">Change password</button>
+        <button class="item danger" id="sOff">Turn off lock</button>` :
+        `<button class="item" id="sSet">Set a password</button>`}
+    </div>
+    <div class="note">Face ID needs a password set first, as a fallback. The lock keeps others out of the app; your photos are stored by Safari in this phone's encrypted storage.</div>
+    <div class="section">Storage</div>
+    <div class="list">
+      <div class="item">Used by this app<span class="v">${usage}</span></div>
+      <div class="item">Protected from automatic cleanup<span class="v">${persisted}</span></div>
+    </div>
+    <div class="note">Photos live only on this device, inside this web app. Keep your originals somewhere else too — deleting the Home Screen icon or clearing Safari website data erases them.</div>
+  </main>`;
+  $('#sDone').onclick = () => { el.classList.add('hidden'); if (!location.hash) renderHome(); };
+  const sSet = $('#sSet');
+  if (sSet) sSet.onclick = async () => {
+    const r = await ask({ title: 'Set Password', message: 'At least 4 characters. If you forget it, the app can’t be unlocked.', fields: [{ type: 'password', placeholder: 'Password' }, { type: 'password', placeholder: 'Confirm password' }], ok: 'Save' });
+    if (!r) return;
+    if (r[0].length < 4) { toast('Password is too short'); return; }
+    if (r[0] !== r[1]) { toast('Passwords didn’t match'); return; }
+    await savePw(r[0]); toast('Password lock on'); openSettings();
+  };
+  if (!on) return;
+  $('#sAuto').value = String(lockCfg.autoLock ?? 60);
+  $('#sAuto').onchange = async e => { lockCfg.autoLock = +e.target.value; await put('meta', lockCfg, 'lock'); };
+  $('#sLockNow').onclick = () => { el.classList.add('hidden'); showLock(); };
+  const sFace = $('#sFace');
+  if (sFace) sFace.onclick = async () => {
+    if (lockCfg.cred) { lockCfg.cred = null; await put('meta', lockCfg, 'lock'); toast('Face ID off'); }
+    else if (await enableFace()) toast('Face ID on');
+    openSettings();
+  };
+  $('#sChange').onclick = async () => {
+    const r = await ask({ title: 'Change Password', fields: [{ type: 'password', placeholder: 'Current password' }, { type: 'password', placeholder: 'New password' }, { type: 'password', placeholder: 'Confirm new password' }], ok: 'Save' });
+    if (!r) return;
+    if (!(await checkPw(r[0]))) { toast('Current password is wrong'); return; }
+    if (r[1].length < 4) { toast('Password is too short'); return; }
+    if (r[1] !== r[2]) { toast('Passwords didn’t match'); return; }
+    await savePw(r[1]); toast('Password changed');
+  };
+  $('#sOff').onclick = async () => {
+    const r = await ask({ title: 'Turn Off Lock', message: 'Enter your password to remove the lock.', fields: [{ type: 'password', placeholder: 'Password' }], ok: 'Turn Off', danger: true });
+    if (!r) return;
+    if (!(await checkPw(r[0]))) { toast('Wrong password'); return; }
+    lockCfg = null; const t = db.transaction('meta', 'readwrite'); t.objectStore('meta').delete('lock'); await done(t);
+    toast('Lock removed'); openSettings();
+  };
+}
+
+/* ---------- home screen icon ---------- */
+function makeIcon() {
+  try {
+    const c = document.createElement('canvas'); c.width = c.height = 180; const x = c.getContext('2d');
+    const gr = x.createLinearGradient(0, 0, 180, 180); gr.addColorStop(0, '#0a84ff'); gr.addColorStop(1, '#5e5ce6');
+    x.fillStyle = gr; x.fillRect(0, 0, 180, 180);
+    x.fillStyle = 'rgba(255,255,255,.95)';
+    [[30, 40, 52, 70], [88, 40, 62, 40], [88, 86, 62, 54], [30, 116, 52, 24]].forEach(([a, b, w, h]) => { x.beginPath(); x.roundRect ? x.roundRect(a, b, w, h, 8) : x.rect(a, b, w, h); x.fill(); });
+    $('#touchIcon').href = c.toDataURL('image/png');
+  } catch (e) {}
+}
+
+/* ---------- start ---------- */
+(async function start() {
+  makeIcon();
+  try { db = await openDB(); }
+  catch (e) { app.innerHTML = '<div class="empty">This browser blocked local storage, so the gallery can’t run here.<br>Open it in Safari (not a private tab).</div>'; return; }
+  lockCfg = (await get('meta', 'lock')) || null;
+  if (lockOn()) showLock();
+  route();
+})();
+</script>
+</body>
+</html>
