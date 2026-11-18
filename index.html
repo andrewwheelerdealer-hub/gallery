@@ -732,6 +732,10 @@ function makeIcon() {
 /* ---------- start ---------- */
 (async function start() {
   makeIcon();
+  // Offline support: sw.js (uploaded next to this file) saves the app on the phone.
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+    navigator.serviceWorker.register('sw.js').catch(e => console.warn('Offline mode unavailable', e));
+  }
   try { db = await openDB(); }
   catch (e) { app.innerHTML = '<div class="empty">This browser blocked local storage, so the gallery can’t run here.<br>Open it in Safari (not a private tab).</div>'; return; }
   lockCfg = (await get('meta', 'lock')) || null;
