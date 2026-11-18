@@ -188,13 +188,16 @@ function ask({ title, message = '', fields = [], ok = 'OK', danger = false, canc
 let db;
 function openDB() {
   return new Promise((res, rej) => {
-    const r = indexedDB.open('gallery-db', 1);
-    r.onupgradeneeded = () => {
+    const r = indexedDB.open('gallery-db', 2);
+    r.onupgradeneeded = e => {
       const d = r.result;
-      d.createObjectStore('albums', { keyPath: 'id' });
-      d.createObjectStore('photos', { keyPath: 'id' }).createIndex('album', 'albumId');
-      d.createObjectStore('originals');
-      d.createObjectStore('meta');
+      if (e.oldVersion < 1) {
+        d.createObjectStore('albums', { keyPath: 'id' });
+        d.createObjectStore('photos', { keyPath: 'id' }).createIndex('album', 'albumId');
+        d.createObjectStore('originals');
+        d.createObjectStore('meta');
+      }
+      if (e.oldVersion < 2) d.createObjectStore('previews'); // sharp versions for Extra large
     };
     r.onsuccess = () => res(r.result);
     r.onerror = () => rej(r.error);
@@ -219,8 +222,8 @@ function firstIn(albumId) {
   });
 }
 async function deletePhotos(ids) {
-  const t = db.transaction(['photos', 'originals'], 'readwrite');
-  for (const id of ids) { t.objectStore('photos').delete(id); t.objectStore('originals').delete(id); }
+  const t = db.transaction(['photos', 'originals', 'previews'], 'readwrite');
+  for (const id of ids) { t.objectStore('photos').delete(id); t.objectStore('originals').delete(id); t.objectStore('previews').delete(id); }
   return done(t);
 }
 
@@ -230,7 +233,7 @@ const mkUrl = blob => { const u = URL.createObjectURL(blob); liveUrls.push(u); r
 function revokeAll() { liveUrls.forEach(u => URL.revokeObjectURL(u)); liveUrls = []; }
 
 /* ---------- state & routing ---------- */
-const state = { album: null, photos: [], urls: [] };
+const state = { album: null, photos: [], urls: [], prevUrls: {} };
 const SIZES = [100, 150, 220, 440];
 let sizeIdx = +(localStorage.getItem('gal-size') ?? 1);
 if (!(sizeIdx in SIZES)) sizeIdx = 1;
@@ -243,7 +246,7 @@ window.addEventListener('hashchange', route);
 
 /* ---------- home ---------- */
 async function renderHome() {
-  state.album = null; state.photos = []; state.urls = [];
+  state.album = null; state.photos = []; state.urls = []; state.prevUrls = {}; previewQueue = [];
   const albums = (await getAll('albums')).sort((a, b) => a.created - b.created);
   const cards = [];
   for (const a of albums) {
@@ -286,7 +289,7 @@ async function renderAlbum(id) {
   const photos = await photosIn(id);
   sortPhotos(photos, a.sort);
   revokeAll();
-  state.album = a; state.photos = photos; state.urls = photos.map(p => mkUrl(p.thumb));
+  state.album = a; state.photos = photos; state.urls = photos.map(p => mkUrl(p.thumb)); state.prevUrls = {}; previewQueue = [];
   app.innerHTML = `<header class="bar">
       <button class="iconbtn" id="btnBack" aria-label="Albums">${ICON.back}</button>
       <h1>${esc(a.name)}</h1>
@@ -313,9 +316,40 @@ function sortPhotos(photos, mode) {
   else photos.sort((x, y) => x.added - y.added);
 }
 
+/* Extra large: swap in sharp, screen-resolution versions for the tiles on screen.
+   They're made from the original once, then kept so they load instantly next time. */
+let previewObserver = null, previewQueue = [], previewBusy = false;
+function observePreview(im) {
+  if (!previewObserver) previewObserver = new IntersectionObserver(entries => {
+    entries.forEach(en => { if (en.isIntersecting) { previewObserver.unobserve(en.target); previewQueue.push(en.target); } });
+    runPreviews();
+  }, { rootMargin: '800px 0px' });
+  previewObserver.observe(im);
+}
+async function runPreviews() {
+  if (previewBusy) return; previewBusy = true;
+  try {
+    while (previewQueue.length) {
+      const im = previewQueue.shift();
+      const p = state.photos[+im.dataset.i]; if (!p || !im.isConnected) continue;
+      if (!state.prevUrls[p.id]) {
+        let blob = await get('previews', p.id);
+        if (!blob) {
+          const orig = await get('originals', p.id); if (!orig) continue;
+          try { blob = (await resizeImage(orig, 1400, 2800)).blob; await put('previews', blob, p.id); } catch (e) { continue; }
+        }
+        if (state.photos[+im.dataset.i] !== p) continue; // album changed meanwhile
+        state.prevUrls[p.id] = mkUrl(blob);
+      }
+      if (im.isConnected) im.src = state.prevUrls[p.id];
+    }
+  } finally { previewBusy = false; }
+}
+
 // Justified rows: every thumbnail keeps the photo's real shape — nothing is cropped.
 function layoutGrid() {
   const grid = $('#grid'); if (!grid) return;
+  if (previewObserver) { previewObserver.disconnect(); previewObserver = null; }
   const W = grid.clientWidth, gap = 3, target = SIZES[sizeIdx];
   const perRow = sizeIdx === 3 ? 2 : 0; // Extra large: always two photos per row
   grid.innerHTML = '';
@@ -330,7 +364,9 @@ function layoutGrid() {
       const b = document.createElement('button');
       b.style.width = (ar * h) + 'px';
       if (fill && k === row.length - 1) b.classList.add('fill');
-      b.innerHTML = `<img src="${state.urls[i]}" alt="" loading="lazy" decoding="async">`;
+      const pid = state.photos[i].id;
+      b.innerHTML = `<img src="${state.prevUrls[pid] || state.urls[i]}" alt="" loading="lazy" decoding="async">`;
+      if (perRow && !state.prevUrls[pid]) { const im = b.firstChild; im.dataset.i = i; observePreview(im); }
       b.onclick = () => openViewer(i);
       r.appendChild(b);
     });
@@ -394,16 +430,21 @@ function loadImg(blob) {
   });
 }
 async function makeThumb(blob) {
+  const r = await resizeImage(blob, 1200, 480);
+  return { thumb: r.blob, w: r.w, h: r.h };
+}
+async function resizeImage(blob, maxW, maxH) {
   const { im, u } = await loadImg(blob);
   const w = im.naturalWidth, h = im.naturalHeight;
-  const sc = Math.min(1, 480 / h, 1200 / w);
+  const sc = Math.min(1, maxH / h, maxW / w);
   const c = document.createElement('canvas');
   c.width = Math.max(1, Math.round(w * sc)); c.height = Math.max(1, Math.round(h * sc));
   c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
   URL.revokeObjectURL(u);
-  const thumb = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.82));
-  if (!thumb) throw new Error('Thumbnail failed');
-  return { thumb, w, h };
+  const out = await new Promise(r => c.toBlob(r, 'image/jpeg', maxW > 1200 ? 0.9 : 0.82));
+  c.width = c.height = 0; // free canvas memory right away (helps on iPhone)
+  if (!out) throw new Error('Resize failed');
+  return { blob: out, w, h };
 }
 async function importFiles(files, album) {
   let ok = 0, fail = 0, firstId = null;
