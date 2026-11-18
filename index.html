@@ -38,6 +38,8 @@ main.tight{padding-left:calc(var(--sl) + 3px);padding-right:calc(var(--sr) + 3px
 .grid .row button{flex:none;height:100%;background:var(--panel);overflow:hidden;display:block}
 .grid .row button:last-child.fill{flex:1 1 0}
 .grid img{width:100%;height:100%;display:block;object-fit:cover}
+.atitle{margin:2px 9px 0;font-size:28px;font-weight:700;line-height:1.2;word-break:break-word}
+body:has(#selBar:not(.hidden)) #toast{bottom:calc(var(--sb) + 84px)}
 .subtitle{color:var(--muted);font-size:13px;padding:2px 9px 10px}
 /* viewer */
 #viewer{position:fixed;inset:0;z-index:50;background:#000}
@@ -69,6 +71,19 @@ main.tight{padding-left:calc(var(--sl) + 3px);padding-right:calc(var(--sr) + 3px
 .modal .btns button{flex:1;padding:13px;color:var(--accent);font-size:17px}
 .modal .btns button+button{border-left:1px solid var(--line);font-weight:600}
 .modal .btns button.danger{color:var(--danger)}
+.grid .row button{position:relative}
+.check{display:none;position:absolute;right:6px;bottom:6px;width:24px;height:24px;border-radius:50%;border:2px solid #fff;background:rgba(0,0,0,.2);box-shadow:0 0 4px rgba(0,0,0,.5)}
+.selecting .check{display:block}
+.selecting .sel img{opacity:.65}
+.selecting .sel .check{background:var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 12.5l4 4 8-9'/%3E%3C/svg%3E") center/16px no-repeat}
+main.selecting{padding-bottom:calc(var(--sb) + 80px)}
+.textbtn{color:var(--accent);font-size:17px;padding:8px 4px;flex:none;min-width:96px;text-align:left}
+.textbtn.bold{font-weight:600;text-align:right}
+.bar h1.center{text-align:center;font-size:17px;font-weight:600}
+#selBar{position:fixed;left:0;right:0;bottom:0;z-index:20;display:flex;justify-content:space-around;padding:12px calc(var(--sr) + 16px) calc(var(--sb) + 12px) calc(var(--sl) + 16px);background:rgba(28,28,30,.92);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);border-top:1px solid var(--line)}
+#selBar button{color:var(--accent);font-size:17px;padding:6px 18px}
+#selBar button.danger{color:var(--danger)}
+#selBar button:disabled{color:var(--muted);opacity:.5}
 #toast{position:fixed;left:50%;bottom:calc(var(--sb) + 24px);transform:translateX(-50%);z-index:90;background:rgba(58,58,60,.96);padding:10px 18px;border-radius:20px;font-size:14px;max-width:86vw;text-align:center;pointer-events:none;transition:opacity .25s;opacity:0}
 #toast.show{opacity:1}
 /* lock */
@@ -233,7 +248,7 @@ const mkUrl = blob => { const u = URL.createObjectURL(blob); liveUrls.push(u); r
 function revokeAll() { liveUrls.forEach(u => URL.revokeObjectURL(u)); liveUrls = []; }
 
 /* ---------- state & routing ---------- */
-const state = { album: null, photos: [], urls: [], prevUrls: {} };
+const state = { album: null, photos: [], urls: [], prevUrls: {}, selecting: false, sel: new Set() };
 const SIZES = [100, 150, 220, 440];
 let sizeIdx = +(localStorage.getItem('gal-size') ?? 1);
 if (!(sizeIdx in SIZES)) sizeIdx = 1;
@@ -290,23 +305,99 @@ async function renderAlbum(id) {
   sortPhotos(photos, a.sort);
   revokeAll();
   state.album = a; state.photos = photos; state.urls = photos.map(p => mkUrl(p.thumb)); state.prevUrls = {}; previewQueue = [];
-  app.innerHTML = `<header class="bar">
-      <button class="iconbtn" id="btnBack" aria-label="Albums">${ICON.back}</button>
-      <h1>${esc(a.name)}</h1>
+  state.selecting = false; state.sel = new Set();
+  app.innerHTML = `<header class="bar" id="albumBar"></header>
+    <main class="tight" id="albumMain">${photos.length ? `<h2 class="atitle">${esc(a.name)}</h2><div class="subtitle">${photos.length} photo${photos.length === 1 ? '' : 's'}</div><div class="grid" id="grid"></div>` :
+      `<h2 class="atitle">${esc(a.name)}</h2>` + '<div class="empty">This album is empty.<br><br><button class="pill" id="btnFirstImport">Import photos</button></div>'}</main>
+    <div id="selBar" class="hidden"><button id="selMove">Move</button><button id="selDelete" class="danger">Delete</button></div>`;
+  drawAlbumBar();
+  const fi = $('#btnFirstImport'); if (fi) fi.onclick = pickFiles;
+  $('#selMove').onclick = moveSelected;
+  $('#selDelete').onclick = deleteSelected;
+  layoutGrid();
+}
+
+/* ---------- select mode (like the Files app) ---------- */
+function drawAlbumBar() {
+  const bar = $('#albumBar'), a = state.album, n = state.photos.length;
+  $('#albumMain').classList.toggle('selecting', state.selecting);
+  $('#selBar').classList.toggle('hidden', !state.selecting);
+  if (state.selecting) {
+    bar.innerHTML = `<button class="textbtn" id="btnSelAll"></button>
+      <h1 class="center" id="selCount"></h1>
+      <button class="textbtn bold" id="btnSelDone">Done</button>`;
+    $('#btnSelAll').onclick = () => {
+      const all = state.sel.size === n;
+      state.sel = all ? new Set() : new Set(state.photos.map(p => p.id));
+      document.querySelectorAll('#grid .row button').forEach(b => b.classList.toggle('sel', state.sel.has(b.dataset.id)));
+      updateSel();
+    };
+    $('#btnSelDone').onclick = () => setSelecting(false);
+    updateSel();
+  } else {
+    bar.innerHTML = `<button class="iconbtn" id="btnBack" aria-label="Albums">${ICON.back}</button>
+      <h1></h1>
+      ${n ? '<button class="iconbtn" id="btnSelect">Select</button>' : ''}
       <button class="iconbtn" id="btnSize" aria-label="Thumbnail size">${ICON.size}</button>
       <button class="iconbtn" id="btnImport" aria-label="Import">${ICON.plus}</button>
-      <button class="iconbtn" id="btnMenu" aria-label="Album options">${ICON.more}</button></header>
-    <main class="tight">${photos.length ? `<div class="subtitle">${photos.length} photo${photos.length === 1 ? '' : 's'}</div><div class="grid" id="grid"></div>` :
-      '<div class="empty">This album is empty.<br><br><button class="pill" id="btnFirstImport">Import photos</button></div>'}</main>`;
-  $('#btnBack').onclick = () => { location.hash = ''; };
-  $('#btnImport').onclick = pickFiles;
-  $('#btnMenu').onclick = albumMenu;
-  $('#btnSize').onclick = () => {
-    sizeIdx = (sizeIdx + 1) % SIZES.length; localStorage.setItem('gal-size', sizeIdx);
-    layoutGrid(); toast(['Small', 'Medium', 'Large', 'Extra large'][sizeIdx] + ' thumbnails', 1200);
-  };
-  const fi = $('#btnFirstImport'); if (fi) fi.onclick = pickFiles;
-  layoutGrid();
+      <button class="iconbtn" id="btnMenu" aria-label="Album options">${ICON.more}</button>`;
+    $('#btnBack').onclick = () => { location.hash = ''; };
+    $('#btnImport').onclick = pickFiles;
+    $('#btnMenu').onclick = albumMenu;
+    const sb = $('#btnSelect'); if (sb) sb.onclick = () => setSelecting(true);
+    $('#btnSize').onclick = () => {
+      sizeIdx = (sizeIdx + 1) % SIZES.length; localStorage.setItem('gal-size', sizeIdx);
+      layoutGrid(); toast(['Small', 'Medium', 'Large', 'Extra large'][sizeIdx] + ' thumbnails', 1200);
+    };
+  }
+}
+function setSelecting(on) {
+  state.selecting = on; state.sel = new Set();
+  document.querySelectorAll('#grid .row button.sel').forEach(b => b.classList.remove('sel'));
+  drawAlbumBar();
+}
+function toggleSel(id, b) {
+  if (state.sel.has(id)) state.sel.delete(id); else state.sel.add(id);
+  b.classList.toggle('sel', state.sel.has(id));
+  updateSel();
+}
+function updateSel() {
+  const k = state.sel.size, n = state.photos.length;
+  $('#selCount').textContent = k ? `${k} Selected` : 'Select Items';
+  $('#btnSelAll').textContent = k === n ? 'Deselect All' : 'Select All';
+  $('#selMove').disabled = $('#selDelete').disabled = !k;
+}
+async function moveSelected() {
+  const ids = [...state.sel]; if (!ids.length) return;
+  const a = state.album;
+  const others = (await getAll('albums')).filter(x => x.id !== a.id).sort((x, y) => x.created - y.created);
+  const opts = others.map(x => ({ label: x.name, value: x }));
+  opts.push({ label: 'New album…', value: 'new' });
+  let dest = await sheet(`Move ${ids.length} photo${ids.length === 1 ? '' : 's'} to…`, opts);
+  if (!dest) return;
+  if (dest === 'new') {
+    const r = await ask({ title: 'New Album', message: 'Enter a name for this album.', fields: [{ placeholder: 'Title' }], ok: 'Save' });
+    if (!r) return;
+    dest = { id: uid(), name: r[0].trim() || 'Untitled', created: Date.now(), coverId: null, sort: 'old' };
+  }
+  const t = db.transaction(['photos', 'albums'], 'readwrite'), ps = t.objectStore('photos');
+  for (const p of state.photos) if (state.sel.has(p.id)) { p.albumId = dest.id; ps.put(p); }
+  if (!dest.coverId) dest.coverId = ids[0];
+  t.objectStore('albums').put(dest);
+  if (state.sel.has(a.coverId)) { a.coverId = null; t.objectStore('albums').put(a); }
+  await done(t);
+  toast(`Moved ${ids.length} to “${dest.name}”`);
+  renderAlbum(a.id);
+}
+async function deleteSelected() {
+  const ids = [...state.sel]; if (!ids.length) return;
+  const a = state.album;
+  const r = await ask({ title: `Delete ${ids.length} photo${ids.length === 1 ? '' : 's'}?`, message: 'They will be removed from this app. Copies elsewhere (Photos, Files) are not affected.', ok: 'Delete', danger: true });
+  if (!r) return;
+  await deletePhotos(ids);
+  if (state.sel.has(a.coverId)) { a.coverId = null; await put('albums', a); }
+  toast(`Deleted ${ids.length} photo${ids.length === 1 ? '' : 's'}`);
+  renderAlbum(a.id);
 }
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
@@ -367,7 +458,10 @@ function layoutGrid() {
       const pid = state.photos[i].id;
       b.innerHTML = `<img src="${state.prevUrls[pid] || state.urls[i]}" alt="" loading="lazy" decoding="async">`;
       if (perRow && !state.prevUrls[pid]) { const im = b.firstChild; im.dataset.i = i; observePreview(im); }
-      b.onclick = () => openViewer(i);
+      b.dataset.id = pid;
+      b.insertAdjacentHTML('beforeend', '<span class="check"></span>');
+      if (state.sel.has(pid)) b.classList.add('sel');
+      b.onclick = () => state.selecting ? toggleSel(pid, b) : openViewer(i);
       r.appendChild(b);
     });
     grid.appendChild(r);
