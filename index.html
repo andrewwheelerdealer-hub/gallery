@@ -15,12 +15,17 @@
 --st:env(safe-area-inset-top,0px);--sb:env(safe-area-inset-bottom,0px);--sl:env(safe-area-inset-left,0px);--sr:env(safe-area-inset-right,0px)}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;background:var(--bg);color:var(--text);font:16px -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;touch-action:manipulation}
-body{min-height:100vh;overscroll-behavior:none;-webkit-user-select:none;user-select:none}
+body{height:100%;overflow:hidden;overscroll-behavior:none;-webkit-user-select:none;user-select:none}
+html{height:100%;overflow:hidden}
+/* The page itself never scrolls; this inner area does. That keeps iOS 26 from drawing
+   its blurred "scroll edge" effect over photos under the status bar. */
+#app{position:fixed;left:0;right:0;bottom:0;top:var(--st);overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain}
 textarea,input{-webkit-user-select:text;user-select:text}
 button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
 .hidden{display:none!important}
-header.bar{position:relative;z-index:10;display:flex;align-items:center;gap:8px;padding:calc(var(--st) + 10px) calc(var(--sr) + 12px) 10px calc(var(--sl) + 12px);background:#000}
-header.bar.stick{position:sticky;top:0}
+header.bar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:8px;padding:10px calc(var(--sr) + 12px) 10px calc(var(--sl) + 12px);background:#000;transition:transform .22s ease}
+header.bar.away{transform:translateY(-100%)}
+#settings header.bar{padding-top:calc(var(--st) + 10px)}
 /* A solid fixed bar touching the top edge: iOS 26 extends its colour into the status-bar area
    instead of drawing its own blurred 'scroll edge' effect over the photos. */
 #statusShade{position:fixed;top:0;left:0;right:0;height:max(var(--st),8px);background:#000;z-index:15;pointer-events:none}
@@ -254,11 +259,22 @@ function revokeAll() { liveUrls.forEach(u => URL.revokeObjectURL(u)); liveUrls =
 
 /* ---------- state & routing ---------- */
 const state = { album: null, photos: [], urls: [], prevUrls: {}, selecting: false, sel: new Set() };
+const APP_VERSION = '1.7';
+/* Top bar hides while you scroll down through photos and comes back when you scroll up. */
+let lastScroll = 0;
+app.addEventListener('scroll', () => {
+  const y = app.scrollTop, bar = app.querySelector('header.bar'); if (!bar) return;
+  if (state.selecting || y < 60) bar.classList.remove('away');
+  else if (y > lastScroll + 6) bar.classList.add('away');
+  else if (y < lastScroll - 6) bar.classList.remove('away');
+  lastScroll = y;
+}, { passive: true });
 const SIZES = [100, 150, 220, 440];
 let sizeIdx = +(localStorage.getItem('gal-size') ?? 1);
 if (!(sizeIdx in SIZES)) sizeIdx = 1;
 
 function route() {
+  app.scrollTop = 0; lastScroll = 0;
   const m = location.hash.match(/^#a-(.+)$/);
   if (m) renderAlbum(decodeURIComponent(m[1])); else renderHome();
 }
@@ -326,7 +342,7 @@ async function renderAlbum(id) {
 function drawAlbumBar() {
   const bar = $('#albumBar'), a = state.album, n = state.photos.length;
   $('#albumMain').classList.toggle('selecting', state.selecting);
-  bar.classList.toggle('stick', state.selecting); // keep Select All / Done reachable while selecting
+  if (state.selecting) bar.classList.remove('away'); // keep Select All / Done reachable while selecting
   $('#selBar').classList.toggle('hidden', !state.selecting);
   if (state.selecting) {
     bar.innerHTML = `<button class="textbtn" id="btnSelAll"></button>
@@ -836,6 +852,7 @@ async function openSettings() {
     <div class="list">
       <div class="item">Used by this app<span class="v">${usage}</span></div>
       <div class="item">Protected from automatic cleanup<span class="v">${persisted}</span></div>
+      <div class="item">App version<span class="v">${APP_VERSION}</span></div>
     </div>
     <div class="note">Photos live only on this device, inside this web app. Keep your originals somewhere else too — deleting the Home Screen icon or clearing Safari website data erases them.</div>
   </main>`;
