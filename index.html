@@ -231,7 +231,7 @@ function revokeAll() { liveUrls.forEach(u => URL.revokeObjectURL(u)); liveUrls =
 
 /* ---------- state & routing ---------- */
 const state = { album: null, photos: [], urls: [] };
-const SIZES = [100, 150, 220];
+const SIZES = [100, 150, 220, 440];
 let sizeIdx = +(localStorage.getItem('gal-size') ?? 1);
 if (!(sizeIdx in SIZES)) sizeIdx = 1;
 
@@ -284,7 +284,7 @@ async function renderAlbum(id) {
   const a = await get('albums', id);
   if (!a) { location.hash = ''; renderHome(); return; }
   const photos = await photosIn(id);
-  photos.sort((x, y) => a.sort === 'new' ? y.added - x.added : x.added - y.added);
+  sortPhotos(photos, a.sort);
   revokeAll();
   state.album = a; state.photos = photos; state.urls = photos.map(p => mkUrl(p.thumb));
   app.innerHTML = `<header class="bar">
@@ -300,23 +300,31 @@ async function renderAlbum(id) {
   $('#btnMenu').onclick = albumMenu;
   $('#btnSize').onclick = () => {
     sizeIdx = (sizeIdx + 1) % SIZES.length; localStorage.setItem('gal-size', sizeIdx);
-    layoutGrid(); toast(['Small', 'Medium', 'Large'][sizeIdx] + ' thumbnails', 1200);
+    layoutGrid(); toast(['Small', 'Medium', 'Large', 'Extra large'][sizeIdx] + ' thumbnails', 1200);
   };
   const fi = $('#btnFirstImport'); if (fi) fi.onclick = pickFiles;
   layoutGrid();
+}
+
+const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+function sortPhotos(photos, mode) {
+  if (mode === 'title') photos.sort((x, y) => collator.compare(x.name || '', y.name || '') || x.added - y.added);
+  else if (mode === 'new') photos.sort((x, y) => y.added - x.added);
+  else photos.sort((x, y) => x.added - y.added);
 }
 
 // Justified rows: every thumbnail keeps the photo's real shape — nothing is cropped.
 function layoutGrid() {
   const grid = $('#grid'); if (!grid) return;
   const W = grid.clientWidth, gap = 3, target = SIZES[sizeIdx];
+  const perRow = sizeIdx === 3 ? 2 : 0; // Extra large: always two photos per row
   grid.innerHTML = '';
   let row = [], sum = 0;
   const flush = last => {
     if (!row.length) return;
-    let h = (W - gap * (row.length - 1)) / sum;
-    const fill = !(last && h > target * 1.25);
-    if (!fill) h = target;
+    let h = (W - gap * (row.length - 1)) / sum, fill = true;
+    if (perRow && row.length < perRow) { h = ((W - gap * (perRow - 1)) / perRow) / (sum / row.length); fill = false; }
+    else if (!perRow && last && h > target * 1.25) { h = target; fill = false; }
     const r = document.createElement('div'); r.className = 'row'; r.style.height = h + 'px';
     row.forEach(({ i, ar }, k) => {
       const b = document.createElement('button');
@@ -332,7 +340,7 @@ function layoutGrid() {
   state.photos.forEach((p, i) => {
     const ar = (p.w && p.h) ? p.w / p.h : 1;
     row.push({ i, ar }); sum += ar;
-    if (sum * target + gap * (row.length - 1) >= W) flush(false);
+    if (perRow ? row.length === perRow : sum * target + gap * (row.length - 1) >= W) flush(false);
   });
   flush(true);
 }
@@ -343,14 +351,20 @@ async function albumMenu() {
   const a = state.album;
   const v = await sheet(a.name, [
     { label: 'Rename album', value: 'rename' },
-    { label: a.sort === 'new' ? 'Sort: oldest first' : 'Sort: newest first', value: 'sort' },
+    { label: 'Sort by…', value: 'sort' },
     { label: 'Delete album', value: 'delete', danger: true }
   ]);
   if (v === 'rename') {
     const r = await ask({ title: 'Rename Album', fields: [{ value: a.name }], ok: 'Save' });
     if (r && r[0].trim()) { a.name = r[0].trim(); await put('albums', a); renderAlbum(a.id); }
   } else if (v === 'sort') {
-    a.sort = a.sort === 'new' ? 'old' : 'new'; await put('albums', a); renderAlbum(a.id);
+    const cur = a.sort || 'old', mark = k => (cur === k ? '✓ ' : '');
+    const s = await sheet('Sort photos', [
+      { label: mark('title') + 'Title (A–Z)', value: 'title' },
+      { label: mark('old') + 'Oldest first', value: 'old' },
+      { label: mark('new') + 'Newest first', value: 'new' }
+    ]);
+    if (s && s !== cur) { a.sort = s; await put('albums', a); renderAlbum(a.id); }
   } else if (v === 'delete') {
     const r = await ask({ title: `Delete “${a.name}”?`, message: `This permanently removes the album and its ${state.photos.length} photo(s) from this app.`, ok: 'Delete', danger: true });
     if (!r) return;
