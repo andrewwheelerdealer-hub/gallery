@@ -184,7 +184,7 @@ function sheet(title, options) {
     const finish = v => { wrap.remove(); resolve(v); };
     wrap.addEventListener('click', e => {
       const b = e.target.closest('button');
-      if (b) { const i = +b.dataset.i; finish(i < 0 ? null : options[i].value); }
+      if (b) { const i = +b.dataset.i, o = options[i]; if (o && o.action) o.action(); finish(i < 0 ? null : o.value); }
       else if (e.target === wrap) finish(null);
     });
     document.body.appendChild(wrap);
@@ -254,7 +254,8 @@ function revokeAll() { liveUrls.forEach(u => URL.revokeObjectURL(u)); liveUrls =
 
 /* ---------- state & routing ---------- */
 const state = { album: null, photos: [], urls: [], prevUrls: {}, selecting: false, sel: new Set() };
-const APP_VERSION = '1.8';
+const APP_VERSION = '2.0';
+const getAlign = () => localStorage.getItem('gal-valign') === 'bottom' ? 'bottom' : 'center';
 /* Top bar hides while you scroll down through photos and comes back when you scroll up. */
 let lastScroll = 0;
 window.addEventListener('scroll', () => {
@@ -327,7 +328,7 @@ async function renderAlbum(id) {
       `<h2 class="atitle">${esc(a.name)}</h2>` + '<div class="empty">This album is empty.<br><br><button class="pill" id="btnFirstImport">Import photos</button></div>'}</main>
     <div id="selBar" class="hidden"><button id="selMove">Move</button><button id="selDelete" class="danger">Delete</button></div>`;
   drawAlbumBar();
-  const fi = $('#btnFirstImport'); if (fi) fi.onclick = pickFiles;
+  const fi = $('#btnFirstImport'); if (fi) fi.onclick = importMenu;
   $('#selMove').onclick = moveSelected;
   $('#selDelete').onclick = deleteSelected;
   layoutGrid();
@@ -359,7 +360,7 @@ function drawAlbumBar() {
       <button class="iconbtn" id="btnImport" aria-label="Import">${ICON.plus}</button>
       <button class="iconbtn" id="btnMenu" aria-label="Album options">${ICON.more}</button>`;
     $('#btnBack').onclick = () => { location.hash = ''; };
-    $('#btnImport').onclick = pickFiles;
+    $('#btnImport').onclick = importMenu;
     $('#btnMenu').onclick = albumMenu;
     const sb = $('#btnSelect'); if (sb) sb.onclick = () => setSelecting(true);
     $('#btnSize').onclick = () => {
@@ -525,6 +526,41 @@ async function albumMenu() {
 let suppressLock = false;
 const fileInput = $('#fileInput');
 function pickFiles() { suppressLock = true; fileInput.value = ''; fileInput.click(); }
+function importMenu() {
+  sheet('Add photos', [
+    { label: 'Photo Library or Files', action: pickFiles },
+    { label: 'Paste from Clipboard', action: pasteFromClipboard }
+  ]);
+}
+function pasteName(type, n) {
+  const d = new Date(), z = x => String(x).padStart(2, '0');
+  const ext = (type.split('/')[1] || 'png').replace('jpeg', 'jpg');
+  return `Pasted ${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} ${z(d.getHours())}.${z(d.getMinutes())}.${z(d.getSeconds())}${n ? '-' + (n + 1) : ''}.${ext}`;
+}
+// Called straight from the tap so iOS shows its small "Paste" bubble; tap it to allow.
+function pasteFromClipboard() {
+  if (!state.album) return;
+  if (!navigator.clipboard || !navigator.clipboard.read) { toast('Pasting isn’t supported in this browser'); return; }
+  const album = state.album;
+  navigator.clipboard.read().then(async items => {
+    const files = []; let n = 0;
+    for (const it of items) {
+      const t = it.types.find(x => x.startsWith('image/')); if (!t) continue;
+      const blob = await it.getType(t);
+      files.push(new File([blob], pasteName(t, n++), { type: t }));
+    }
+    if (!files.length) { toast('No image on the clipboard — copy a photo first'); return; }
+    await importFiles(files, album);
+  }).catch(e => toast(e && e.name === 'NotAllowedError' ? 'Paste was cancelled' : 'Couldn’t read the clipboard'));
+}
+// Keyboard paste (⌘V) inside an album also works.
+document.addEventListener('paste', e => {
+  if (!state.album || locked || /^(INPUT|TEXTAREA)$/.test(document.activeElement && document.activeElement.tagName)) return;
+  const files = [...(e.clipboardData ? e.clipboardData.files : [])].filter(f => f.type.startsWith('image/'));
+  if (!files.length) return;
+  e.preventDefault();
+  importFiles(files.map((f, i) => new File([f], pasteName(f.type, i), { type: f.type })), state.album);
+});
 fileInput.addEventListener('cancel', () => { suppressLock = false; });
 fileInput.addEventListener('change', async () => {
   suppressLock = false;
@@ -585,7 +621,7 @@ const viewer = $('#viewer'), stage = $('#stage'), vImg = $('#vImg'), vDesc = $('
 $('#vClose').innerHTML = ICON.close; $('#vMore').innerHTML = ICON.more;
 const V = { i: 0, s: 1, tx: 0, ty: 0, origUrl: null, origBlob: null, token: 0, descFor: null };
 
-function openViewer(i) { V.i = i; viewer.classList.remove('hidden'); viewer.classList.remove('nochrome'); document.body.style.overflow = 'hidden'; showPhoto(); }
+function openViewer(i) { vImg.style.objectPosition = getAlign() === 'bottom' ? 'center bottom' : 'center center'; V.i = i; viewer.classList.remove('hidden'); viewer.classList.remove('nochrome'); document.body.style.overflow = 'hidden'; showPhoto(); }
 function closeViewer() {
   flushDesc(); vDesc.blur();
   viewer.classList.add('hidden'); document.body.style.overflow = '';
@@ -843,6 +879,11 @@ async function openSettings() {
         `<button class="item" id="sSet">Set a password</button>`}
     </div>
     <div class="note">Face ID needs a password set first, as a fallback. The lock keeps others out of the app; your photos are stored by Safari in this phone's encrypted storage.</div>
+    <div class="section">Viewer</div>
+    <div class="list">
+      <div class="item">Photo position<select id="sAlign"><option value="center">Centered</option><option value="bottom">Bottom of screen</option></select></div>
+    </div>
+    <div class="note">“Bottom of screen” lines photos up with the bottom edge, so a 1170 × 2322 image on your iPhone sits just below the status bar and its blur. Tap a photo to hide the description box.</div>
     <div class="section">Storage</div>
     <div class="list">
       <div class="item">Used by this app<span class="v">${usage}</span></div>
@@ -851,6 +892,8 @@ async function openSettings() {
     </div>
     <div class="note">Photos live only on this device, inside this web app. Keep your originals somewhere else too — deleting the Home Screen icon or clearing Safari website data erases them.</div>
   </main>`;
+  $('#sAlign').value = getAlign();
+  $('#sAlign').onchange = e => { localStorage.setItem('gal-valign', e.target.value); toast(e.target.value === 'bottom' ? 'Photos line up at the bottom' : 'Photos centered'); };
   $('#sDone').onclick = () => { el.classList.add('hidden'); if (!location.hash) renderHome(); };
   const sSet = $('#sSet');
   if (sSet) sSet.onclick = async () => {
